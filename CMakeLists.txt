@@ -27,31 +27,6 @@ add_library(map_planner src/mpl_planner/map_planner.cpp)
 
 include(CTest)
 
-add_executable(test_traj_solver test/test_traj_solver.cpp)
-target_link_libraries(test_traj_solver poly_solver ${Boost_LIBRARIES})
-add_test(test_traj_solver test_traj_solver)
-
-add_executable(test_planner_2d test/test_planner_2d.cpp)
-target_link_libraries(test_planner_2d map_planner ${YAMLCPP_LIBRARIES} ${Boost_LIBRARIES})
-add_test(test_planner_2d test_planner_2d ${CMAKE_SOURCE_DIR}/data/corridor.yaml)
-
-add_executable(test_planner_2d_prior_traj test/test_planner_2d_prior_traj.cpp)
-target_link_libraries(test_planner_2d_prior_traj map_planner ${YAMLCPP_LIBRARIES} ${Boost_LIBRARIES})
-add_test(test_planner_2d_prior_traj test_planner_2d_prior_traj ${CMAKE_SOURCE_DIR}/data/corridor.yaml)
-
-add_executable(test_planner_2d_with_yaw test/test_planner_2d_with_yaw.cpp)
-target_link_libraries(test_planner_2d_with_yaw map_planner ${YAMLCPP_LIBRARIES} ${Boost_LIBRARIES})
-add_test(test_planner_2d_with_yaw test_planner_2d_with_yaw ${CMAKE_SOURCE_DIR}/data/corridor.yaml)
-
-add_executable(test_distance_map_planner_2d test/test_distance_map_planner_2d.cpp)
-target_link_libraries(test_distance_map_planner_2d map_planner ${YAMLCPP_LIBRARIES} ${Boost_LIBRARIES})
-add_test(test_distance_map_planner_2d test_distance_map_planner_2d ${CMAKE_SOURCE_DIR}/data/corridor.yaml)
-
-add_executable(test_distance_map_planner_2d_with_yaw test/test_distance_map_planner_2d_with_yaw.cpp)
-target_link_libraries(test_distance_map_planner_2d_with_yaw map_planner ${YAMLCPP_LIBRARIES} ${Boost_LIBRARIES})
-add_test(test_distance_map_planner_2d_with_yaw test_distance_map_planner_2d_with_yaw ${CMAKE_SOURCE_DIR}/data/corridor.yaml)
-
-
 install(FILES "${PROJECT_NAME}Config.cmake" "${PROJECT_NAME}ConfigVersion.cmake"
   DESTINATION "share/${PROJECT_NAME}/cmake")
 

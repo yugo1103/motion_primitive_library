@@ -11,6 +11,13 @@
 namespace MPL {
 
 /**
+ * @brief Key for node
+ *
+ * We use string as the Key for indexing, by default the Key refers to 'pos-vel-acc-...'
+ */
+typedef std::string Key;
+
+/**
  * @brief Base environment class
  */
 template <int Dim>
@@ -222,6 +229,56 @@ class env_base {
       return str;
     }
 
+    ///Genegrate Key from state
+    virtual Key state_to_idx(const Waypoint<Dim>& state) const {
+      const Veci<Dim> pi = round(state.pos, ds_);
+      if(state.control == Control::VEL)
+        return to_string(pi);
+      else if(state.control == Control::ACC) {
+        const Veci<Dim> vi = round(state.vel, dv_);
+        return to_string(pi) + to_string(vi);
+      }
+      else if(state.control == Control::JRK) {
+        const Veci<Dim> vi = round(state.vel, dv_);
+        const Veci<Dim> ai = round(state.acc, da_);
+        return to_string(pi) + to_string(vi) + to_string(ai);
+      }
+      else if(state.control == Control::SNP) {
+        const Veci<Dim> vi = round(state.vel, dv_);
+        const Veci<Dim> ai = round(state.acc, da_);
+        const Veci<Dim> ji = round(state.jrk, dj_);
+        return to_string(pi) + to_string(vi) + to_string(ai) + to_string(ji);
+      }
+      else if(state.control == Control::VELxYAW) {
+        int yawi = std::round(state.yaw/dyaw_);
+        return to_string(pi) +
+        std::to_string(yawi);
+      }
+       else if(state.control == Control::ACCxYAW) {
+        const Veci<Dim> vi = round(state.vel, dv_);
+        int yawi = std::round(state.yaw/dyaw_);
+        return to_string(pi) + to_string(vi) +
+          std::to_string(yawi);
+      }
+       else if(state.control == Control::JRKxYAW) {
+        const Veci<Dim> vi = round(state.vel, dv_);
+        const Veci<Dim> ai = round(state.acc, da_);
+        int yawi = std::round(state.yaw/dyaw_);
+        return to_string(pi) + to_string(vi) + to_string(ai) +
+          std::to_string(yawi);
+      }
+       else if(state.control == Control::SNPxYAW) {
+        const Veci<Dim> vi = round(state.vel, dv_);
+        const Veci<Dim> ai = round(state.acc, da_);
+        const Veci<Dim> ji = round(state.jrk, dj_);
+        int yawi = std::round(state.yaw/dyaw_);
+        return to_string(pi) + to_string(vi) + to_string(ai) + to_string(ji) +
+          std::to_string(yawi);
+      }
+      else
+        return "";
+    }
+
     ///Recover trajectory
     void forward_action( const Waypoint<Dim>& curr,
                         int action_id, Primitive<Dim>& pr) const {
@@ -266,6 +323,31 @@ class env_base {
     ///Set dt for primitive
     void set_dt(decimal_t dt) {
       dt_ = dt;
+    }
+
+    ///Set ds
+    void set_ds(decimal_t ds) {
+      ds_ = ds;
+    }
+
+    ///Set dv
+    void set_dv(decimal_t dv) {
+      dv_ = dv;
+    }
+
+    ///Set da
+    void set_da(decimal_t da) {
+      da_ = da;
+    }
+
+    ///Set dj
+    void set_dj(decimal_t dj) {
+      dj_ = dj;
+    }
+
+    ///Set dyaw
+    void set_dyaw(decimal_t dyaw) {
+      dyaw_ = dyaw;
     }
 
     ///Set distance tolerance for goal region
@@ -343,6 +425,10 @@ class env_base {
       printf("+                  w: %.2f               +\n", w_);
       printf("+               wyaw: %.2f               +\n", wyaw_);
       printf("+                 dt: %.2f               +\n", dt_);
+      printf("+                 ds: %.2f               +\n", ds_);
+      printf("+                 dv: %.2f               +\n", dv_);
+      printf("+                 da: %.2f               +\n", da_);
+      printf("+                 dj: %.2f               +\n", dj_);
       printf("+              t_max: %.2f               +\n", t_max_);
       printf("+              v_max: %.2f               +\n", v_max_);
       printf("+              a_max: %.2f               +\n", a_max_);
@@ -379,14 +465,20 @@ class env_base {
      * @brief Get successor
      * @param curr The node to expand
      * @param succ The array stores valid successors
+     * @param succ_idx The array stores successors' Key
      * @param succ_cost The array stores cost along valid edges
      * @param action_idx The array stores corresponding idx of control for each
      * successor
      */
     virtual void get_succ(const Waypoint<Dim> &curr, vec_E<Waypoint<Dim>> &succ,
+                          std::vector<Key> &succ_idx,
                           std::vector<decimal_t> &succ_cost,
                           std::vector<int> &action_idx) const {
       printf("Used Null get_succ()\n");
+      succ.push_back(curr);
+      succ_idx.push_back(state_to_idx(curr));
+      succ_cost.push_back(0);
+      action_idx.push_back(0);
     }
 
     /// Get the valid region
@@ -418,6 +510,16 @@ class env_base {
     decimal_t t_max_{std::numeric_limits<decimal_t>::infinity()};
     ///duration of primitive
     decimal_t dt_{1.0};
+    ///grid size in position
+    decimal_t ds_{0.01};
+    ///grid size in velocity
+    decimal_t dv_{0.1};
+    ///grid size in acceleration
+    decimal_t da_{0.1};
+    ///grid size in jerk
+    decimal_t dj_{0.1};
+    ///grid size in yaw
+    decimal_t dyaw_{0.1};
     ///expanded nodes
     mutable vec_Vecf<Dim> expanded_nodes_;
     ///Array of constant control input

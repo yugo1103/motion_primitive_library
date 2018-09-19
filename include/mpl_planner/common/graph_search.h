@@ -29,6 +29,7 @@ public:
    * @brief Astar graph search
    *
    * @param start_coord start state
+   * @param start_key key of the start state
    * @param ENV object of `env_base' class
    * @param ss_ptr workspace input
    * @param traj output trajectory
@@ -37,7 +38,7 @@ public:
    * @param max_t max time horizon of expanded states, default value is -1 which
    * means there is no limitation
    */
-  decimal_t Astar(const Coord &start_coord,
+  bool Astar(const Coord &start_coord, Key start_key,
                   const std::shared_ptr<env_base<Dim>> &ENV,
                   std::shared_ptr<StateSpace<Dim, Coord>> &ss_ptr,
                   Trajectory<Dim> &traj, int max_expand = -1,
@@ -47,11 +48,11 @@ public:
       return 0;
 
     // Initialize start node
-    StatePtr<Coord> currNode_ptr = ss_ptr->hm_[start_coord];
+    StatePtr<Coord> currNode_ptr = ss_ptr->hm_[start_key];
     if (ss_ptr->pq_.empty()) {
       if (verbose_)
         printf(ANSI_COLOR_GREEN "Start from new node!\n" ANSI_COLOR_RESET);
-      currNode_ptr = std::make_shared<State<Coord>>(start_coord);
+      currNode_ptr = std::make_shared<State<Coord>>(start_key, start_coord);
       currNode_ptr->g = 0;
       currNode_ptr->h = ss_ptr->eps_ == 0 ? 0 : ENV->get_heur(start_coord);
       decimal_t fval = currNode_ptr->g + ss_ptr->eps_ * currNode_ptr->h;
@@ -59,7 +60,7 @@ public:
         ss_ptr->pq_.push(std::make_pair(fval, currNode_ptr));
       currNode_ptr->iterationopened = true;
       currNode_ptr->iterationclosed = false;
-      ss_ptr->hm_[start_coord] = currNode_ptr;
+      ss_ptr->hm_[start_key] = currNode_ptr;
     }
 
     int expand_iteration = 0;
@@ -72,10 +73,11 @@ public:
 
       // Get successors
       vec_E<Coord> succ_coord;
+      std::vector<MPL::Key> succ_key;
       std::vector<decimal_t> succ_cost;
       std::vector<int> succ_act_id;
 
-      ENV->get_succ(currNode_ptr->coord, succ_coord, succ_cost,
+      ENV->get_succ(currNode_ptr->coord, succ_coord, succ_key, succ_cost,
                     succ_act_id);
 
       // Process successors (satisfy dynamic constraints but might hit obstacles)
@@ -85,13 +87,13 @@ public:
           continue;
 
         // Get child
-        StatePtr<Coord> &succNode_ptr = ss_ptr->hm_[succ_coord[s]];
+        StatePtr<Coord> &succNode_ptr = ss_ptr->hm_[succ_key[s]];
         if (!succNode_ptr) {
-          succNode_ptr = std::make_shared<State<Coord>>(succ_coord[s]);
+          succNode_ptr = std::make_shared<State<Coord>>(succ_key[s], succ_coord[s]);
           succNode_ptr->h = ss_ptr->eps_ == 0 ? 0 : ENV->get_heur(succNode_ptr->coord);
           /*
            * Comment this block if build multiple connected graph
-           succNode_ptr->pred_coord.push_back(currNode_ptr->coord);
+           succNode_ptr->pred_hashkey.push_back(currNode_ptr->hashkey);
            succNode_ptr->pred_action_id.push_back(succ_act_id[s]);
            succNode_ptr->pred_action_cost.push_back(succ_cost[s]);
            */
@@ -101,7 +103,7 @@ public:
         /**
          * Comment following if build single connected graph
          * */
-        succNode_ptr->pred_coord.push_back(currNode_ptr->coord);
+        succNode_ptr->pred_hashkey.push_back(currNode_ptr->hashkey);
         succNode_ptr->pred_action_cost.push_back(succ_cost[s]);
         succNode_ptr->pred_action_id.push_back(succ_act_id[s]);
         //*/
@@ -113,7 +115,7 @@ public:
         if (tentative_gval < succNode_ptr->g) {
           /**
            * Comment this block if build multiple connected graph
-           succNode_ptr->pred_coord.front() = currNode_ptr->coord;  // Assign
+           succNode_ptr->pred_hashkey.front() = currNode_ptr->hashkey;  // Assign
            new parent
            succNode_ptr->pred_action_id.front() = succ_act_id[s];
            succNode_ptr->pred_action_cost.front() = succ_cost[s];
@@ -164,14 +166,16 @@ public:
         printf(ANSI_COLOR_RED
                "MaxExpandStep [%d] Reached!!!!!!\n\n" ANSI_COLOR_RESET,
                max_expand);
-        return std::numeric_limits<decimal_t>::infinity();
+        //return std::numeric_limits<decimal_t>::infinity();
+        return false;
       }
 
       // If pq is empty, abort!
       if (ss_ptr->pq_.empty()) {
         printf(ANSI_COLOR_RED
                "Priority queue is empty!!!!!!\n\n" ANSI_COLOR_RESET);
-        return std::numeric_limits<decimal_t>::infinity();
+        //return std::numeric_limits<decimal_t>::infinity();
+        return false;
       }
     }
 
@@ -189,8 +193,9 @@ public:
     }
 
     ss_ptr->expand_iteration_ = expand_iteration;
-    traj = recoverTraj(currNode_ptr, ss_ptr, ENV, start_coord);
-    return currNode_ptr->g;
+    traj = recoverTraj(currNode_ptr, ss_ptr, ENV, start_key);
+    //return currNode_ptr->g;
+    return true;
   }
 
 
@@ -198,6 +203,7 @@ public:
    * @brief Lifelong Planning Astar graph search
    *
    * @param start_coord start state
+   * @param start_key key of the start state
    * @param ENV object of `env_base' class
    * @param ss_ptr workspace input
    * @param traj output trajectory
@@ -206,7 +212,7 @@ public:
    * @param max_t max time horizon of expanded states, default value is -1 which
    * means there is no limitation
    */
-  decimal_t LPAstar(const Coord &start_coord,
+  decimal_t LPAstar(const Coord &start_coord, Key start_key,
                     const std::shared_ptr<env_base<Dim>> &ENV,
                     std::shared_ptr<StateSpace<Dim, Coord>> &ss_ptr,
                     Trajectory<Dim> &traj, int max_expand = -1,
@@ -224,11 +230,11 @@ public:
       max_t > 0 ? max_t : std::numeric_limits<decimal_t>::infinity();
 
     // Initialize start node
-    StatePtr<Coord> currNode_ptr = ss_ptr->hm_[start_coord];
+    StatePtr<Coord> currNode_ptr = ss_ptr->hm_[start_key];
     if (!currNode_ptr) {
       if (verbose_)
         printf(ANSI_COLOR_GREEN "Start from new node!\n" ANSI_COLOR_RESET);
-      currNode_ptr = std::make_shared<State<Coord>>(start_coord);
+      currNode_ptr = std::make_shared<State<Coord>>(start_key, start_coord);
       currNode_ptr->g = std::numeric_limits<decimal_t>::infinity();
       currNode_ptr->rhs = 0;
       currNode_ptr->h = ss_ptr->eps_ == 0 ? 0 : ENV->get_heur(start_coord);
@@ -236,11 +242,11 @@ public:
         std::make_pair(ss_ptr->calculateKey(currNode_ptr), currNode_ptr));
       currNode_ptr->iterationopened = true;
       currNode_ptr->iterationclosed = false;
-      ss_ptr->hm_[start_coord] = currNode_ptr;
+      ss_ptr->hm_[start_key] = currNode_ptr;
     }
 
     // Initialize goal node
-    StatePtr<Coord> goalNode_ptr = std::make_shared<State<Coord>>(Coord());
+    StatePtr<Coord> goalNode_ptr = std::make_shared<State<Coord>>(Key(), Coord());
     if (!ss_ptr->best_child_.empty() &&
          ENV->is_goal(ss_ptr->best_child_.back()->coord))
       goalNode_ptr = ss_ptr->best_child_.back();
@@ -263,43 +269,47 @@ public:
 
       // Get successors
       vec_E<Coord> succ_coord = currNode_ptr->succ_coord;
+      std::vector<MPL::Key> succ_key = currNode_ptr->succ_hashkey;
       std::vector<decimal_t> succ_cost = currNode_ptr->succ_action_cost;
       std::vector<int> succ_act_id = currNode_ptr->succ_action_id;
 
       bool explored = false;
-      if (currNode_ptr->succ_coord.empty()) {
+      if (currNode_ptr->succ_hashkey.empty()) {
         explored = true;
-        ENV->get_succ(currNode_ptr->coord, succ_coord, succ_cost, succ_act_id);
+        ENV->get_succ(currNode_ptr->coord, succ_coord, succ_key, succ_cost,
+                      succ_act_id);
         currNode_ptr->succ_coord.resize(succ_coord.size());
+        currNode_ptr->succ_hashkey.resize(succ_coord.size());
         currNode_ptr->succ_action_id.resize(succ_coord.size());
         currNode_ptr->succ_action_cost.resize(succ_coord.size());
       }
 
       // Process successors
-      for (unsigned s = 0; s < succ_coord.size(); ++s) {
+      for (unsigned s = 0; s < succ_key.size(); ++s) {
         // Get child
-        StatePtr<Coord> &succNode_ptr = ss_ptr->hm_[succ_coord[s]];
+        StatePtr<Coord> &succNode_ptr = ss_ptr->hm_[succ_key[s]];
         if (!(succNode_ptr)) {
-          succNode_ptr = std::make_shared<State<Coord>>(succ_coord[s]);
+          succNode_ptr = std::make_shared<State<Coord>>(succ_key[s], succ_coord[s]);
           succNode_ptr->h = ss_ptr->eps_ == 0 ? 0 : ENV->get_heur(succNode_ptr->coord);
         }
 
         // store the hashkey
         if (explored) {
           currNode_ptr->succ_coord[s] = succ_coord[s];
+          currNode_ptr->succ_hashkey[s] = succ_key[s];
           currNode_ptr->succ_action_id[s] = succ_act_id[s];
           currNode_ptr->succ_action_cost[s] = succ_cost[s];
         }
 
         int id = -1;
-        for (unsigned int i = 0; i < succNode_ptr->pred_coord.size(); i++) {
-          if (succNode_ptr->pred_coord[i] == currNode_ptr->coord) {
+        for (unsigned int i = 0; i < succNode_ptr->pred_hashkey.size(); i++) {
+          if (succNode_ptr->pred_hashkey[i] == currNode_ptr->hashkey) {
             id = i;
             break;
           }
         }
         if (id == -1) {
-          succNode_ptr->pred_coord.push_back(currNode_ptr->coord);
+          succNode_ptr->pred_hashkey.push_back(currNode_ptr->hashkey);
           succNode_ptr->pred_action_cost.push_back(succ_cost[s]);
           succNode_ptr->pred_action_id.push_back(succ_act_id[s]);
         }
@@ -355,7 +365,7 @@ public:
 
     // auto start = std::chrono::high_resolution_clock::now();
     //****** Recover trajectory
-    traj = recoverTraj(goalNode_ptr, ss_ptr, ENV, start_coord);
+    traj = recoverTraj(goalNode_ptr, ss_ptr, ENV, start_key);
 
     // std::chrono::duration<decimal_t> elapsed_seconds =
     // std::chrono::high_resolution_clock::now() - start;
@@ -370,12 +380,12 @@ private:
   Trajectory<Dim> recoverTraj(
     StatePtr<Coord> currNode_ptr,
     std::shared_ptr<StateSpace<Dim, Coord>> ss_ptr,
-    const std::shared_ptr<env_base<Dim>> &ENV, const Coord& start_key) {
+    const std::shared_ptr<env_base<Dim>> &ENV, const Key &start_key) {
   // Recover trajectory
   ss_ptr->best_child_.clear();
 
   vec_E<Primitive<Dim>> prs;
-  while (!currNode_ptr->pred_coord.empty()) {
+  while (!currNode_ptr->pred_hashkey.empty()) {
     if (verbose_) {
       std::cout << "t: " << currNode_ptr->coord.t << " --> "
                 << currNode_ptr->coord.t - ss_ptr->dt_ << std::endl;
@@ -386,8 +396,8 @@ private:
     int min_id = -1;
     decimal_t min_rhs = std::numeric_limits<decimal_t>::infinity();
     decimal_t min_g = std::numeric_limits<decimal_t>::infinity();
-    for (unsigned int i = 0; i < currNode_ptr->pred_coord.size(); i++) {
-      Coord key = currNode_ptr->pred_coord[i];
+    for (unsigned int i = 0; i < currNode_ptr->pred_hashkey.size(); i++) {
+      Key key = currNode_ptr->pred_hashkey[i];
       // std::cout << "action id: " << currNode_ptr->pred_action_id[i] << "
       // parent g: " << ss_ptr->hm_[key]->g << " action cost: " <<
       // currNode_ptr->pred_action_cost[i] << " parent key: " <<key <<
@@ -407,7 +417,7 @@ private:
     }
 
     if (min_id >= 0) {
-      Coord key = currNode_ptr->pred_coord[min_id];
+      Key key = currNode_ptr->pred_hashkey[min_id];
       int action_idx = currNode_ptr->pred_action_id[min_id];
       currNode_ptr = ss_ptr->hm_[key];
       Primitive<Dim> pr;
@@ -424,9 +434,9 @@ private:
       if (verbose_) {
         printf(ANSI_COLOR_RED
                "Trace back failure, the number of predecessors is %zu: \n",
-               currNode_ptr->pred_coord.size());
-        for (unsigned int i = 0; i < currNode_ptr->pred_coord.size(); i++) {
-          Coord key = currNode_ptr->pred_coord[i];
+               currNode_ptr->pred_hashkey.size());
+        for (unsigned int i = 0; i < currNode_ptr->pred_hashkey.size(); i++) {
+          Key key = currNode_ptr->pred_hashkey[i];
           printf("i: %d, gvalue: %f, cost: %f\n" ANSI_COLOR_RESET, i,
                  ss_ptr->hm_[key]->g, currNode_ptr->pred_action_cost[i]);
         }
@@ -435,7 +445,7 @@ private:
       break;
     }
 
-    if (currNode_ptr->coord == start_key) {
+    if (currNode_ptr->hashkey == start_key) {
       ss_ptr->best_child_.push_back(currNode_ptr);
       break;
     }

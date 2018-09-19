@@ -11,9 +11,8 @@
 
 namespace MPL {
 
-template <int Dim>
 using linkedHashMap =
-    std::unordered_map<int, std::vector<std::pair<Waypoint<Dim>, int>>>;
+    std::unordered_map<int, std::vector<std::pair<Key, int>>>;
 /**
  * @brief Motion primitive planner in voxel map
  */
@@ -85,7 +84,7 @@ protected:
   std::shared_ptr<MapUtil<Dim>> map_util_;
 
   /// Linked table that records voxel and corresponding primitives passed through
-  mutable linkedHashMap<Dim> lhm_;
+  mutable linkedHashMap lhm_;
 
   /// Max value for potential
   int8_t H_MAX{100};

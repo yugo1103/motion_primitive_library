@@ -7,7 +7,7 @@
 
 #include <boost/heap/d_ary_heap.hpp> // boost::heap::d_ary_heap
 #include <mpl_planner/common/env_base.h>
-#include <boost/unordered_map.hpp> // std::unordered_map
+#include <unordered_map> // std::unordered_map
 
 namespace MPL {
 /// Heap element comparison
@@ -30,18 +30,23 @@ using priorityQueue =
     boost::heap::d_ary_heap<std::pair<decimal_t, std::shared_ptr<state>>,
                             boost::heap::mutable_<true>, boost::heap::arity<2>,
                             boost::heap::compare<compare_pair<state>>>;
+
 /// Lattice of the graph in graph search
 template <typename Coord> struct State {
+  /// hash key in the hashmap
+  Key hashkey; // discrete coordinates of this node
   /// state
   Coord coord;
   /// coordinates of successors
   vec_E<Coord> succ_coord;
+  /// hashkey of successors
+  std::vector<Key> succ_hashkey;
   /// action id of successors
   std::vector<int> succ_action_id;
   /// action cost of successors
   std::vector<decimal_t> succ_action_cost;
-  /// coordinates of predecessors
-  vec_E<Coord> pred_coord;
+  /// hashkey of predecessors
+  std::vector<Key> pred_hashkey;
   /// action id of predecessors
   std::vector<int> pred_action_id;
   /// action cost of predecessors
@@ -63,14 +68,15 @@ template <typename Coord> struct State {
   bool iterationclosed = false;
 
   /// Simple constructor
-  State(const Coord& coord) : coord(coord) {}
+  State(Key hashkey, const Coord& coord)
+      : hashkey(hashkey), coord(coord) {}
 };
 
 /// Declare StatePtr
 template <typename Coord> using StatePtr = std::shared_ptr<State<Coord>>;
 
 /// Define hashmap type
-template <typename Coord> using hashMap = boost::unordered_map<Coord, StatePtr<Coord>, boost::hash<Coord>>;
+template <typename Coord> using hashMap = std::unordered_map<Key, StatePtr<Coord>>;
 
 /// State space
 template <int Dim, typename Coord> struct StateSpace {
@@ -103,7 +109,7 @@ template <int Dim, typename Coord> struct StateSpace {
     StatePtr<Coord> currNode_ptr = best_child_[time_step];
     currNode_ptr->pred_action_cost.clear();
     currNode_ptr->pred_action_id.clear();
-    currNode_ptr->pred_coord.clear();
+    currNode_ptr->pred_hashkey.clear();
     currNode_ptr->coord.t = 0;
 
     for (auto &it : hm_) {
@@ -111,7 +117,7 @@ template <int Dim, typename Coord> struct StateSpace {
       it.second->rhs = std::numeric_limits<decimal_t>::infinity();
       it.second->pred_action_cost.clear();
       it.second->pred_action_id.clear();
-      it.second->pred_coord.clear();
+      it.second->pred_hashkey.clear();
       it.second->coord.t = 0;
     }
 
@@ -122,7 +128,7 @@ template <int Dim, typename Coord> struct StateSpace {
     priorityQueue<State<Coord>> epq;
     currNode_ptr->heapkey =
       epq.push(std::make_pair(currNode_ptr->rhs, currNode_ptr));
-    new_hm[currNode_ptr->coord] = currNode_ptr;
+    new_hm[currNode_ptr->hashkey] = currNode_ptr;
 
     while (!epq.empty()) {
       currNode_ptr = epq.top().second;
@@ -132,26 +138,27 @@ template <int Dim, typename Coord> struct StateSpace {
         currNode_ptr->iterationclosed = false;
         currNode_ptr->g = std::numeric_limits<decimal_t>::infinity();
         currNode_ptr->succ_coord.clear();
+        currNode_ptr->succ_hashkey.clear();
         currNode_ptr->succ_action_cost.clear();
         currNode_ptr->succ_action_id.clear();
       }
 
-      for (unsigned int i = 0; i < currNode_ptr->succ_coord.size(); i++) {
-        Coord succ_coord = currNode_ptr->succ_coord[i];
+      for (unsigned int i = 0; i < currNode_ptr->succ_hashkey.size(); i++) {
+        Key succ_key = currNode_ptr->succ_hashkey[i];
 
-        StatePtr<Coord> &succNode_ptr = new_hm[succ_coord];
+        StatePtr<Coord> &succNode_ptr = new_hm[succ_key];
         if (!succNode_ptr)
-          succNode_ptr = hm_[succ_coord];
+          succNode_ptr = hm_[succ_key];
 
         int id = -1;
-        for (unsigned int i = 0; i < succNode_ptr->pred_coord.size(); i++) {
-          if (succNode_ptr->pred_coord[i] == currNode_ptr->coord) {
+        for (unsigned int i = 0; i < succNode_ptr->pred_hashkey.size(); i++) {
+          if (succNode_ptr->pred_hashkey[i] == currNode_ptr->hashkey) {
             id = i;
             break;
           }
         }
         if (id == -1) {
-          succNode_ptr->pred_coord.push_back(currNode_ptr->coord);
+          succNode_ptr->pred_hashkey.push_back(currNode_ptr->hashkey);
           succNode_ptr->pred_action_cost.push_back(
             currNode_ptr->succ_action_cost[i]);
           succNode_ptr->pred_action_id.push_back(currNode_ptr->succ_action_id[i]);
@@ -182,7 +189,7 @@ template <int Dim, typename Coord> struct StateSpace {
   }
 
   /// Increase the cost of actions
-  vec_E<Primitive<Dim>> increaseCost(std::vector<std::pair<Coord, int>> states,
+  vec_E<Primitive<Dim>> increaseCost(std::vector<std::pair<Key, int>> states,
                                      const std::shared_ptr<env_base<Dim>> &ENV) {
     vec_E<Primitive<Dim>> prs;
     for (const auto &affected_node : states) {
@@ -194,7 +201,7 @@ template <int Dim, typename Coord> struct StateSpace {
           std::numeric_limits<decimal_t>::infinity();
         updateNode(succNode_ptr);
 
-        Coord parent_key = succNode_ptr->pred_coord[i];
+        Key parent_key = succNode_ptr->pred_hashkey[i];
         Primitive<Dim> pr;
         ENV->forward_action(hm_[parent_key]->coord,
                             succNode_ptr->pred_action_id[i], pr);
@@ -215,14 +222,14 @@ template <int Dim, typename Coord> struct StateSpace {
     return prs;
   }
   /// Decrease the cost of actions
-  vec_E<Primitive<Dim>> decreaseCost(std::vector<std::pair<Coord, int>> states,
+  vec_E<Primitive<Dim>> decreaseCost(std::vector<std::pair<Key, int>> states,
                                      const std::shared_ptr<env_base<Dim>> &ENV) {
     vec_E<Primitive<Dim>> prs;
     for (const auto &affected_node : states) {
       StatePtr<Coord> &succNode_ptr = hm_[affected_node.first];
       const int i = affected_node.second;
       if (std::isinf(succNode_ptr->pred_action_cost[i])) {
-        Coord parent_key = succNode_ptr->pred_coord[i];
+        Key parent_key = succNode_ptr->pred_hashkey[i];
         Primitive<Dim> pr;
         ENV->forward_action(hm_[parent_key]->coord,
                             succNode_ptr->pred_action_id[i], pr);
@@ -251,8 +258,8 @@ template <int Dim, typename Coord> struct StateSpace {
     // start rhs is assumed to be 0
     if (currNode_ptr->rhs != 0) {
       currNode_ptr->rhs = std::numeric_limits<decimal_t>::infinity();
-      for (unsigned int i = 0; i < currNode_ptr->pred_coord.size(); i++) {
-        Coord pred_key = currNode_ptr->pred_coord[i];
+      for (unsigned int i = 0; i < currNode_ptr->pred_hashkey.size(); i++) {
+        Key pred_key = currNode_ptr->pred_hashkey[i];
         if (currNode_ptr->rhs >
             hm_[pred_key]->g + currNode_ptr->pred_action_cost[i]) {
           currNode_ptr->rhs =

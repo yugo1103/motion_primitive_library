@@ -19,6 +19,8 @@ namespace MPL {
 
 template <int Dim, typename Coord> class PlannerBase {
 public:
+  bool goal_pose_change_ = false;
+  bool replanning_flag_ = true;
   /// Simple constructor
   PlannerBase(bool verbose = false) : planner_verbose_(verbose) {}
   /// Check if the planner has been initialized
@@ -30,13 +32,54 @@ public:
   Trajectory<Dim> getTraj() const {
     return traj_;
   }
+  /// Get valid primitives connect to the goal
+  vec_E<Primitive<Dim>> getPrimitivesToGoal() const {
+    vec_E<Primitive<Dim>> prs;
+    if (ss_ptr_->best_child_.empty())
+      return prs;
+
+    std::unordered_map<Key, bool> added;
+
+    auto currNode_ptr = ss_ptr_->best_child_.back();
+    std::queue<StatePtr<Coord>> q;
+    q.push(currNode_ptr);
+    while (!q.empty()) {
+      int size = q.size();
+      for (int i = 0; i < size; i++) {
+        currNode_ptr = q.front();
+        q.pop();
+        for (unsigned int j = 0; j < currNode_ptr->pred_hashkey.size(); j++) {
+          Key pred_key = currNode_ptr->pred_hashkey[j];
+          Key key_pair = currNode_ptr->hashkey + pred_key;
+          if (added.count(key_pair) == 1 ||
+              std::isinf(
+                currNode_ptr
+                ->pred_action_cost[j])) // skip the pred if the cost is inf
+            continue;
+          q.push(ss_ptr_->hm_[pred_key]);
+          added[key_pair] = true;
+          int action_idx = currNode_ptr->pred_action_id[j];
+          Primitive<Dim> pr;
+          ENV_->forward_action(ss_ptr_->hm_[pred_key]->coord, action_idx, pr);
+          prs.push_back(pr);
+        }
+      }
+    }
+
+    if (planner_verbose_)
+      printf(
+        "number of states in hm: %zu, number of prs connet to the goal: %zu\n",
+        ss_ptr_->hm_.size(), prs.size());
+
+    return prs;
+  }
   /// Get expanded collision free primitives
   vec_E<Primitive<Dim>> getValidPrimitives() const {
     vec_E<Primitive<Dim>> prs;
     for (const auto &it : ss_ptr_->hm_) {
-      if (it.second && !it.second->pred_coord.empty()) {
-        for (unsigned int i = 0; i < it.second->pred_coord.size(); i++) {
-          Coord key = it.second->pred_coord[i];
+      if (it.second && !it.second->pred_hashkey.empty()) {
+        for (unsigned int i = 0; i < it.second->pred_hashkey.size(); i++) {
+          Key key = it.second->pred_hashkey[i];
           // if(!ss_ptr_->hm_[key] || std::isinf(it.second->pred_action_cost[i]))
           if (std::isinf(it.second->pred_action_cost[i]))
             continue;
@@ -58,9 +101,9 @@ public:
   vec_E<Primitive<Dim>> getAllPrimitives() const {
     vec_E<Primitive<Dim>> prs;
     for (const auto &it : ss_ptr_->hm_) {
-      if (it.second && !it.second->pred_coord.empty()) {
-        for (unsigned int i = 0; i < it.second->pred_coord.size(); i++) {
-          Coord key = it.second->pred_coord[i];
+      if (it.second && !it.second->pred_hashkey.empty()) {
+        for (unsigned int i = 0; i < it.second->pred_hashkey.size(); i++) {
+          Key key = it.second->pred_hashkey[i];
           Primitive<Dim> pr;
           ENV_->forward_action(ss_ptr_->hm_[key]->coord,
                                it.second->pred_action_id[i], pr);
@@ -170,6 +213,30 @@ public:
     if (planner_verbose_)
       printf("[PlannerBase] set dt: %f\n", dt);
   }
+  /// Set ds for each primitive
+  void setDs(decimal_t ds) {
+    ENV_->set_ds(ds);
+    if (planner_verbose_)
+      printf("[PlannerBase] set ds: %f\n", ds);
+  }
+  /// Set dv for each primitive
+  void setDv(decimal_t dv) {
+    ENV_->set_dv(dv);
+    if (planner_verbose_)
+      printf("[PlannerBase] set dv: %f\n", dv);
+  }
+  /// Set da for each primitive
+  void setDa(decimal_t da) {
+    ENV_->set_da(da);
+    if (planner_verbose_)
+      printf("[PlannerBase] set da: %f\n", da);
+  }
+  /// Set dj for each primitive
+  void setDj(decimal_t dj) {
+    ENV_->set_dj(dj);
+    if (planner_verbose_)
+      printf("[PlannerBase] set dj: %f\n", dj);
+  }
   /// Set weight for cost in time
   void setW(decimal_t w) {
     ENV_->set_w(w);
@@ -224,7 +291,8 @@ public:
    * The goal waypoint is the center of the goal region, the planner cannot find
    * the trajectory hits the exact goal state due to discretization
    */
-  bool plan(const Coord &start, const Coord &goal) {
+  bool plan(const Coord &start, const Coord &goal) {   
+   // std::cout <<"ggg"<<std::endl;
     if (planner_verbose_) {
       start.print("Start:");
       goal.print("Goal:");
@@ -262,9 +330,13 @@ public:
 
     ss_ptr_->dt_ = ENV_->get_dt();
     if (use_lpastar_)
-      planner_ptr->LPAstar(start, ENV_, ss_ptr_, traj_, max_num_, max_t_);
+      planner_ptr->LPAstar(start, ENV_->state_to_idx(start), ENV_, ss_ptr_, traj_,
+                           max_num_, max_t_);
     else
-      planner_ptr->Astar(start, ENV_, ss_ptr_, traj_, max_num_, max_t_);
+      if(!planner_ptr->Astar(start, ENV_->state_to_idx(start), ENV_, ss_ptr_, traj_,
+                         max_num_, max_t_)){
+        return false;
+      }
 
     if (traj_.segs.empty()) {
       if (planner_verbose_)
@@ -272,7 +344,15 @@ public:
                "\n");
       return false;
     }
+    return true;
+  }
 
+  bool check_traj(){
+      for (const auto &pr : getPrimitivesToGoal()){
+        if(!ENV_->is_free(pr)){
+          return false;
+        }
+      }
     return true;
   }
 protected:
@@ -296,3 +376,5 @@ protected:
 }
 
 #endif
+
+

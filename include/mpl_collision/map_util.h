@@ -310,6 +310,30 @@ namespace MPL {
         }
       }
 
+      void freeRobot_r(double robot_r){     
+        Veci<Dim> n;
+        if(Dim == 3){
+          for (n(0) = 0; n(0) < dim_(0); n(0)++) {
+            for (n(1) = 0; n(1) < dim_(1); n(1)++) {
+              for (n(2) = 0; n(2) < dim_(2); n(2)++) {
+                if (n(0) >= dim_(0)/2-(robot_r/res_+1) && n(0) <= dim_(0)/2+(robot_r/res_) && n(1) >= dim_(1)/2-(robot_r/res_+1) && n(1) <= dim_(1)/2+(robot_r/res_) && n(2) >= dim_(2)/2-(robot_r/res_+1) && n(2) <= dim_(2)/2+(robot_r/res_)){
+                  map_[getIndex(n)] = val_free;
+                }
+              }
+            }
+          }
+        }
+        if(Dim == 2){
+          for (n(0) = 0; n(0) < dim_(0); n(0)++) {
+            for (n(1) = 0; n(1) < dim_(1); n(1)++) {
+              if (n(0) >= dim_(0)/2-(robot_r/res_+1) && n(0) <= dim_(0)/2+(robot_r/res_) && n(1) >= dim_(1)/2-(robot_r/res_+1) && n(1) <= dim_(1)/2+(robot_r/res_)){
+                  map_[getIndex(n)] = val_free;
+              }
+            }
+          }
+        }
+      }
+
 
     protected:
       ///Resolution

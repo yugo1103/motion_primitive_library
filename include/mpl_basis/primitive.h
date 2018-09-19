@@ -328,10 +328,14 @@ class Primitive {
   Waypoint<Dim> evaluate(decimal_t t) const {
     Waypoint<Dim> p(control_);
     for (int k = 0; k < Dim; k++) {
-      p.pos(k) = prs_[k].p(t);
-      p.vel(k) = prs_[k].v(t);
-      p.acc(k) = prs_[k].a(t);
-      p.jrk(k) = prs_[k].j(t);
+      if(p.use_pos)
+        p.pos(k) = prs_[k].p(t);
+      if(p.use_vel)
+        p.vel(k) = prs_[k].v(t);
+      if(p.use_acc)
+        p.acc(k) = prs_[k].a(t);
+      if(p.use_jrk)
+        p.jrk(k) = prs_[k].j(t);
       if(p.use_yaw)
         p.yaw = normalize_angle(pr_yaw_.p(t));
     }
@@ -454,10 +458,7 @@ typedef Primitive<3> Primitive3D;
 /************************* Utils ******************************/
 /**
  * @brief Check if the max velocity magnitude is within the threshold
- * @param mv is the max threshold for velocity
- * @param ma is the max threshold for acceleration
- * @param mj is the max threshold for jerk
- * @param myaw is the max threshold for yaw
+ * @param mv is the max threshold
  *
  * Use L1 norm for the maximum
  */
@@ -515,7 +516,7 @@ bool validate_xxx(const Primitive<Dim>& pr, decimal_t max, Control::Control xxx)
 
 /**
  * @brief Check if the successor goes outside of the fov
- * @param my is the value of semi-fov
+ * @param my is the semi-fov
  *
  */
 template <int Dim>
@@ -524,20 +525,13 @@ bool validate_yaw(const Primitive<Dim>& pr, decimal_t my) {
   if (my <= 0)
     return true;
   // check velocity angle at two ends, compare with my
-  vec_E<Waypoint<Dim>> ws(2);
-  ws[0] = pr.evaluate(0);
-  ws[1] = pr.evaluate(pr.t());
+  const auto ws = pr.sample(1);
   for(const auto& w: ws) {
     const auto v = w.vel.template topRows<2>();
-    if(v(0) != 0 || v(1) != 0) { // if v is not zero
-      /*
+    if(v.norm() > 1e-5) { // if v is not zero
       decimal_t vyaw = std::atan2(v(1), v(0));
       decimal_t dyaw = normalize_angle(vyaw - w.yaw);
       if(std::abs(dyaw) > my) // if exceed the threshold
-        return false;
-        */
-      decimal_t d = v.normalized().dot(Vec2f(cos(w.yaw), sin(w.yaw)));
-      if(d < cos(my))
         return false;
     }
   }
