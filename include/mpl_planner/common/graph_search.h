@@ -158,7 +158,7 @@ public:
           printf(ANSI_COLOR_GREEN
                  "MaxExpandTime [%f] Reached!!!!!!\n\n" ANSI_COLOR_RESET,
                  max_t);
-        break;
+        return false;
       }
 
       // If maximum expansion reached, abort!
